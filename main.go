@@ -1,13 +1,27 @@
 package main
 
 import (
-	"os"
+	"log"
 
 	"github.com/johnietre/gossh/client"
 	"github.com/johnietre/gossh/server"
+	"github.com/spf13/cobra"
 )
 
 func main() {
+	log.SetFlags(0)
+	rootCmd := cobra.Command{
+		Use: "gossh",
+	}
+	rootCmd.AddCommand(client.GetCmd(), server.GetCmd())
+	cobra.CheckErr(rootCmd.Execute())
+}
+
+/*
+func main() {
+  rootCmd := cobra.Command{
+  }
+  rootCmd.AddCommand(client.GetClientCmd())
 	if len(os.Args) == 1 {
 		// TODO
 	}
@@ -21,3 +35,4 @@ func main() {
 		server.RunServer()
 	}
 }
+*/

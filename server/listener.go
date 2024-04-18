@@ -55,9 +55,14 @@ func (l *Listener) handle(c net.Conn) {
 		}
 	}()
 	var buf [8]byte
-	if _, err := io.ReadFull(c, buf[:]); err != nil {
-		// TODO?
-		c.Close()
+	if !noTcp {
+		if _, err := io.ReadFull(c, buf[:]); err != nil {
+			// TODO?
+			c.Close()
+			return
+		}
+	} else {
+		l.httpChan <- c
 		return
 	}
 	if common.IsTcpInitial(buf[:]) {
@@ -94,7 +99,7 @@ func (l *Listener) Http() *HttpListener {
 func (l *Listener) Tcp() *TcpListener {
 	return &TcpListener{
 		ln: l,
-		ch: l.httpChan,
+		ch: l.tcpChan,
 	}
 }
 
@@ -166,16 +171,16 @@ func newHttpConn(conn net.Conn, initial []byte) *httpConn {
 
 func (hc *httpConn) Read(b []byte) (n int, err error) {
 	if !hc.finishedInitial.Load() {
-		hc.initial.Apply(func(bp *[]byte) {
-			initial := *bp
+		hc.initial.Apply(func(ip *[]byte) {
+			initial := *ip
 			if len(initial) == 0 {
 				hc.finishedInitial.Store(true)
 				return
 			}
 			n = copy(b, initial)
-			b = b[n:]
+			b, *ip = b[n:], initial[n:]
 			if len(initial) == n {
-				*bp = nil
+				*ip = nil
 				hc.finishedInitial.Store(true)
 			}
 		})

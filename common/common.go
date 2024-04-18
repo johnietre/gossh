@@ -14,6 +14,11 @@ import (
 )
 
 const (
+	AddrEnvName     = "GOSSH_ADDR"
+	PasswordEnvName = "GOSSH_PASSWORD"
+)
+
+const (
 	HttpPasswordHeader = "Gossh-Password"
 )
 
@@ -66,14 +71,14 @@ func WinsizeToBytes(b []byte, ws *pty.Winsize) []byte {
 type Procs = []*Process
 
 type Process struct {
-	Id         uint64   `json:"id"`
+	Id         uint64   `json:"id,omitempty"`
 	Name       string   `json:"name"`
 	Program    string   `json:"program"`
-	Args       []string `json:"args"`
-	Start      int64    `json:"start"`
-	Dir        string   `json:"dir"`
-	Env        []string `json:"env"`
-	InheritEnv bool     `json:"inheritEnv"`
+	Args       []string `json:"args,omitempty"`
+	Start      int64    `json:"start,omitempty"`
+	Dir        string   `json:"dir,omitempty"`
+	Env        []string `json:"env,omitempty"`
+	InheritEnv bool     `json:"inheritEnv,omitempty"`
 
 	cmd   *exec.Cmd
 	procs *utils.RWMutex[Procs]
