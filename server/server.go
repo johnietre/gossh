@@ -141,7 +141,7 @@ func checkPassword(pwd []byte) (bool, error) {
 	}
 	err := bcrypt.CompareHashAndPassword(passwordHash, pwd)
 	if err == bcrypt.ErrMismatchedHashAndPassword || err == bcrypt.ErrHashTooShort {
-		return true, nil
+		return false, nil
 	}
-	return false, err
+	return err == nil, err
 }

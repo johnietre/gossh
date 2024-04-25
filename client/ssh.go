@@ -78,6 +78,7 @@ func runSsh(addr string) {
 func sshConnToStdout(conn net.Conn) int {
 	ret, buf := 0, make([]byte, 1<<15)
 	for {
+		//_, err := io.CopyBuffer(os.Stdout, conn, buf)
 		n, err := conn.Read(buf)
 		if err != nil {
 			if err != io.EOF {
@@ -95,6 +96,7 @@ func sshConnToStdout(conn net.Conn) int {
 func sshStdinToConn(conn net.Conn) {
 	ret, buf := 0, [1024]byte{}
 	for {
+		//_, err := io.CopyBuffer(conn, os.Stdin, buf[:])
 		n, err := os.Stdin.Read(buf[:])
 		if err != nil {
 			if err != io.EOF {
