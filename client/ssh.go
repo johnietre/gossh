@@ -135,7 +135,7 @@ func connectMainConn(addr string, idBuf []byte) net.Conn {
 	if err != nil {
 		log.Fatal("Error connecting: ", err)
 	}
-	if _, err := conn.Write([]byte{common.HeaderNew}); err != nil {
+	if _, err := conn.Write([]byte{common.HeaderNewSsh}); err != nil {
 		log.Fatal("Error connecting: ", err)
 	}
 	if n, err := conn.Read(idBuf[1:]); err != nil {
@@ -151,7 +151,7 @@ func connectOtherConn(addr string, idBuf []byte) net.Conn {
 	if err != nil {
 		log.Fatal("Error connecting: ", err)
 	}
-	idBuf[0] = common.HeaderJoin
+	idBuf[0] = common.HeaderJoinSsh
 	if _, err := other.Write(idBuf[:]); err != nil {
 		log.Fatal("Error sending ID: ", err)
 	}
@@ -185,7 +185,7 @@ func connectConn(addr string) (conn net.Conn, err error) {
 		}
 	}()
 
-	conn, err = dialConn(addr)
+	conn, err = dialConn(addr, common.TcpSsh)
 	if err != nil {
 		return nil, err
 	}

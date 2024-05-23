@@ -18,34 +18,61 @@ const (
 	PasswordEnvName = "GOSSH_PASSWORD"
 )
 
+// HTTP specific
 const (
 	HttpPasswordHeader = "Gossh-Password"
 )
 
+// Initial TCP specific
 const (
-	ActionResize byte = 3
+  TcpUnknown byte = 0
+  TcpSsh byte = 1
+  TcpProcs byte = 2
+  TcpFiles byte = 3
 )
 
-const (
-	HeaderNew  byte = 1
-	HeaderJoin byte = 2
-)
-
+// TCP specific
 const (
 	PasswordOk      byte = 1
 	PasswordInvalid byte = 2
 	PasswordError   byte = 3
 )
 
-func TcpInitial() []byte {
+// TCP responses
+const (
+  RespUnknown byte = 0
+  RespOk byte = 1
+  RespStop byte = 2
+  RespError byte = 3
+
+  ErrOther byte = 128
+  ErrNotExist byte = 129
+)
+
+// SSH specific
+const (
+	HeaderNewSsh  byte = 1
+	HeaderJoinSsh byte = 2
+
+	ActionResize byte = 3
+)
+
+// Files specific
+const (
+  HeaderSendFiles byte = 1
+  HeaderRecvFiles byte = 2
+)
+
+func TcpInitial(what byte) []byte {
 	return []byte{
 		255, 254, 253,
 		'g', 'o', 's', 's', 'h',
+    what,
 	}
 }
 
 func IsTcpInitial(b []byte) bool {
-	return len(b) == 8 && bytes.Equal(b, TcpInitial())
+  return len(b) >= 9 && bytes.Equal(b[:9], TcpInitial(b[8]))
 }
 
 func WinsizeFromBytes(b []byte) pty.Winsize {

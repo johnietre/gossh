@@ -58,7 +58,7 @@ func getPassword() (pwd []byte, err error) {
 	return
 }
 
-func dialConn(addr string) (net.Conn, error) {
+func dialConn(addr string, what byte) (net.Conn, error) {
 	if useWs {
 		return webs.Dial("ws://"+addr+"/ssh/ws", "", "http://localhost/")
 	}
@@ -66,8 +66,9 @@ func dialConn(addr string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := utils.WriteAll(conn, common.TcpInitial()); err != nil {
+	if _, err := utils.WriteAll(conn, common.TcpInitial(what)); err != nil {
 		conn.Close()
+    // TODO
 		return nil, err
 	}
 	return conn, nil

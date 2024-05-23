@@ -58,11 +58,11 @@ func handleSshConn(conn net.Conn) (wg *sync.WaitGroup) {
 	if _, err := conn.Read(buf[:1]); err != nil {
 		return
 	}
-	if buf[0] == common.HeaderNew {
+	if buf[0] == common.HeaderNewSsh {
 		*closeConn = false
 		go handleOOB(cw)
 		return
-	} else if buf[0] != common.HeaderJoin {
+	} else if buf[0] != common.HeaderJoinSsh {
 		return
 	}
 	if n, err := conn.Read(buf[:]); err != nil || n != 8 {
