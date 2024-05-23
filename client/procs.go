@@ -168,7 +168,7 @@ func getAddProcCmd() *cobra.Command {
 			}
 			if b[0] != common.RespOk {
 				log.Print("Received non-Ok response: ", b[0])
-				errMsg, err := readRespErr(conn)
+				errMsg, err := readErrResp(conn)
 				if err != nil {
 					log.Fatal("Error reading error response: ", err)
 				}

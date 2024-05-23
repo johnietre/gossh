@@ -98,13 +98,13 @@ func handleProcsConn(conn net.Conn) {
 	}
 }
 
-func handleProcsConnGet(conn net.Conn) {
+func handleProcsConnGetProc(conn net.Conn) {
 }
 
-func handleProcsConnGets(conn net.Conn) {
+func handleProcsConnGetProcs(conn net.Conn) {
 }
 
-func handleProcsConnAdd(conn net.Conn) {
+func handleProcsConnAddProc(conn net.Conn) {
 	buf := make([]byte, 8)
 	if _, err := io.ReadFull(conn, buf); err != nil {
 		return

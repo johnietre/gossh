@@ -137,7 +137,7 @@ func handleOOB(
 			err = fmt.Errorf("file returned was nil")
 		}
 		conn.Write([]byte(err.Error()))
-		log.Printf("Error starting %s: ", cmd.Path, err)
+		log.Printf("Error starting %s: %v", cmd.Path, err)
 		return
 	}
 	defer f.Close()
