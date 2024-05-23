@@ -21,11 +21,14 @@ func runHttp(ln net.Listener) error {
 			// FIXME: Status code
 			http.Error(w, "Server is not running procs", http.StatusNotFound)
 		})
+		r.HandleFunc("/ws/procs/", func(w http.ResponseWriter, r *http.Request) {
+			// FIXME: Status code
+			http.Error(w, "Server is not running procs", http.StatusNotFound)
+		})
 	} else {
 		r.Group(func(r chi.Router) {
 			r.Use(func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					println("ok")
 					pwd := []byte(r.Header.Get(common.HttpPasswordHeader))
 					if ok, err := checkPassword(pwd); !ok {
 						http.Error(w, "password incorrect", http.StatusUnauthorized)
@@ -46,14 +49,15 @@ func runHttp(ln net.Listener) error {
 			r.Post("/procs", addProcHandler)
 			r.Post("/procs/{id}/signal", signalProcHandler)
 		})
+		r.Handle("/ws/procs", webs.Handler(procsWsHandler))
 	}
 	if noSsh {
-		r.HandleFunc("/ssh/", func(w http.ResponseWriter, r *http.Request) {
+		r.HandleFunc("/ws/ssh", func(w http.ResponseWriter, r *http.Request) {
 			// FIXME: Status code
 			http.Error(w, "Server is not running ssh", http.StatusNotFound)
 		})
 	} else {
-		r.Handle("/ssh/ws", webs.Handler(sshWsHandler))
+		r.Handle("/ws/ssh", webs.Handler(sshWsHandler))
 	}
 
 	return http.Serve(ln, r)
@@ -61,6 +65,11 @@ func runHttp(ln net.Listener) error {
 
 func sshWsHandler(ws *webs.Conn) {
 	handleSshConn(ws).Wait()
+	return
+}
+
+func procsWsHandler(ws *webs.Conn) {
+	handleProcsConn(ws)
 	return
 }
 

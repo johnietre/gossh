@@ -1,18 +1,22 @@
 package client
 
 import (
+	"encoding/binary"
+	"io"
 	"log"
-	_ "net/http"
+	"net/http"
 	"os"
+	"path"
 
 	"github.com/johnietre/gossh/common"
+	utils "github.com/johnietre/utils/go"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
 var (
-	useHttp, inheritThisEnv bool
-	envFile                 string
+	inheritThisEnv bool
+	envFile        string
 
 	proc = &common.Process{}
 )
@@ -27,8 +31,6 @@ func getProcsCmd() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(getAddProcCmd())
-	psflags := cmd.PersistentFlags()
-	psflags.BoolVar(&useHttp, "http", false, "Use HTTP rather than TCP")
 	return cmd
 }
 
@@ -45,7 +47,7 @@ func getSignalProcCmd() *cobra.Command {
 
 func getAddProcCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "add [ADDR] -- <CMD>",
+		Use:     "add [ADDR] [OPTIONS] -- <CMD>",
 		Aliases: []string{"a"},
 		Short:   "Start a new process on the server",
 		Long:    "Starts a new process on the gossh server.",
@@ -60,6 +62,14 @@ func getAddProcCmd() *cobra.Command {
 			}
 
 			flags := cmd.Flags()
+			addr := flags.Arg(0)
+			if addr == "" {
+				cmd.ErrOrStderr().Write([]byte("Missing address to connect to"))
+				if err := cmd.Usage(); err != nil {
+					log.Fatal("Error printing usage: ", err)
+				}
+				return
+			}
 			if envFile := must(flags.GetString("envfile")); envFile != "" {
 				envMap, err := godotenv.Read(envFile)
 				if err != nil {
@@ -77,8 +87,93 @@ func getAddProcCmd() *cobra.Command {
 			if must(flags.GetBool("thisenv")) {
 				proc.Env = append(os.Environ(), proc.Env...)
 			}
+			pipe := must(flags.GetBool("pipe"))
+			if pipe {
+				proc.Stdout, proc.Stderr = common.ProcPipe, common.ProcPipe
+				proc.Stdin = common.ProcPipe
+			}
 			proc.Program, proc.Args = args[progStart], args[progStart+1:]
+
 			// TODO
+
+			if useHttp && !pipe {
+				body, err := encodeJsonBuf(proc)
+				if err != nil {
+					log.Fatal("Error serializing process: ", err)
+				}
+				password = handlePasswordErr(getPassword())
+				req := newReq(http.MethodPost, path.Join(addr, "procs"), body)
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					log.Fatal("Error sending request: ", err)
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					log.Print("SUCCESS")
+				} else {
+					log.Print("Received non-200 status: ", resp.StatusCode)
+				}
+				bytes, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatal("Error reading response body: ", err)
+				}
+				os.Stdout.Write(bytes)
+				if resp.StatusCode != http.StatusOK {
+					os.Exit(1)
+				}
+				return
+			}
+			// Connect
+			conn, err := dialConn(addr, common.TcpProcs)
+			defer conn.Close()
+			if err != nil {
+				log.Fatal("Error connecting: ", err)
+			}
+			// Send password
+			password = handlePasswordErr(getPassword())
+			gotPassword = true
+			if err := sendPassword(conn, nil); err != nil {
+				log.Fatal("Error connecting: ", err)
+			}
+			// Send intent
+			if _, err := conn.Write([]byte{common.HeaderAddProc}); err != nil {
+				log.Fatal("Error sending intent: ", err)
+			}
+			// Send proc
+			buf, err := encodeJsonBuf(proc)
+			if err != nil {
+				log.Fatal("Error serializing process: ", err)
+			}
+			_, err = utils.WriteAll(
+				conn,
+				binary.LittleEndian.AppendUint64(nil, uint64(buf.Len())),
+			)
+			if err != nil {
+				log.Fatal("Error sending process: ", err)
+			}
+			if _, err := utils.WriteAll(conn, buf.Bytes()); err != nil {
+				log.Fatal("Error sending process: ", err)
+			}
+			buf.Reset()
+
+			if pipe {
+				// Run as SSH
+				runSsh(addr, conn, nil)
+				return
+			}
+			// Get response
+			b := make([]byte, 1)
+			if _, err := conn.Read(b); err != nil {
+				log.Fatal("Error reading response: ", err)
+			}
+			if b[0] != common.RespOk {
+				log.Print("Received non-Ok response: ", b[0])
+				errMsg, err := readRespErr(conn)
+				if err != nil {
+					log.Fatal("Error reading error response: ", err)
+				}
+				log.Fatal(string(errMsg))
+			}
 		},
 	}
 	flags := cmd.Flags()
@@ -104,5 +199,6 @@ func getAddProcCmd() *cobra.Command {
 		"Inherit the environment of this machine",
 	)
 	flags.StringVar(&envFile, "envfile", "", "Path to .env file")
+	flags.Bool("pipe", false, "Pipe stdin/stdout/stderr to this machine")
 	return cmd
 }

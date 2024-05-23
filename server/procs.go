@@ -1,6 +1,10 @@
 package server
 
 import (
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net"
 	"sync/atomic"
 	"syscall"
 
@@ -73,4 +77,82 @@ func signalProc(id uint64, signal syscall.Signal) (err error) {
 		}
 	})
 	return
+}
+
+func handleProcsConn(conn net.Conn) {
+	defer conn.Close()
+	var buf [1]byte
+
+	if _, err := conn.Read(buf[:1]); err != nil {
+		return
+	}
+	switch buf[0] {
+	case common.HeaderGetProc:
+		handleProcsConnGetProc(conn)
+	case common.HeaderGetProcs:
+		handleProcsConnGetProcs(conn)
+	case common.HeaderAddProc:
+		handleProcsConnAddProc(conn)
+	default:
+		// TODO
+	}
+}
+
+func handleProcsConnGet(conn net.Conn) {
+}
+
+func handleProcsConnGets(conn net.Conn) {
+}
+
+func handleProcsConnAdd(conn net.Conn) {
+	buf := make([]byte, 8)
+	if _, err := io.ReadFull(conn, buf); err != nil {
+		return
+	}
+	lr := &io.LimitedReader{
+		R: conn,
+		N: int64(binary.LittleEndian.Uint64(buf)),
+	}
+	proc := &common.Process{}
+	if err := json.NewDecoder(lr).Decode(proc); err != nil {
+		writeConnRespMsg(conn, common.RespErr, err.Error())
+		return
+	}
+	cmd := proc.PopulateCmd()
+	if proc.Stdout == common.ProcPipe &&
+		proc.Stderr == common.ProcPipe &&
+		proc.Stdin == common.ProcPipe {
+		// TODO: Send conn resp
+		wg := handleSshConnCmd(
+			conn,
+			cmd,
+			func() error {
+				return addProc(proc)
+			},
+			proc.Wait,
+		)
+		wg.Wait()
+		return
+	}
+
+	if err := addProc(proc); err != nil {
+		writeConnRespMsg(conn, common.RespErr, err.Error())
+		return
+	}
+	bytes, err := json.Marshal(proc)
+	if err != nil {
+		writeConnRespMsg(conn, common.RespErr, err.Error())
+		return
+	}
+	_, err = utils.WriteAll(
+		conn,
+		binary.LittleEndian.AppendUint64(
+			[]byte{common.RespOk},
+			uint64(len(bytes)),
+		),
+	)
+	if err != nil {
+		return
+	}
+	utils.WriteAll(conn, bytes)
 }

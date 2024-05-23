@@ -33,6 +33,7 @@ func (l *Listener) Run() error {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
+			println(err.Error())
 			swapped := l.errVal.CompareAndSwap(
 				utils.ErrorValue{},
 				utils.NewErrorValue(err),

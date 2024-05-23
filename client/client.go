@@ -3,9 +3,13 @@
 package client
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 
 	"github.com/johnietre/gossh/common"
@@ -16,7 +20,8 @@ import (
 )
 
 var (
-	password []byte
+	password          []byte
+	useHttp, insecure bool
 )
 
 func GetCmd() *cobra.Command {
@@ -35,6 +40,14 @@ func GetCmd() *cobra.Command {
 			"Use password set by value of %s environment variable",
 			common.PasswordEnvName,
 		),
+	)
+	psflags.BoolVar(
+		&useHttp, "http", false,
+		"Use HTTP (websocket when applicable) rather than TCP",
+	)
+	psflags.BoolVar(
+		&insecure, "insecure", true,
+		"Use insecure connection",
 	)
 	return cmd
 }
@@ -58,9 +71,21 @@ func getPassword() (pwd []byte, err error) {
 	return
 }
 
+func handlePasswordErr(pwd []byte, err error) []byte {
+	if err != nil {
+		log.Fatal("Error reading password: ", err)
+	}
+	return pwd
+}
+
 func dialConn(addr string, what byte) (net.Conn, error) {
-	if useWs {
-		return webs.Dial("ws://"+addr+"/ssh/ws", "", "http://localhost/")
+	if useHttp {
+		if insecure {
+			addr = "ws://" + addr
+		} else {
+			addr = "wss://" + addr
+		}
+		return webs.Dial(addr, "", "http://localhost/")
 	}
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -68,11 +93,75 @@ func dialConn(addr string, what byte) (net.Conn, error) {
 	}
 	if _, err := utils.WriteAll(conn, common.TcpInitial(what)); err != nil {
 		conn.Close()
-    // TODO
+		// TODO
 		return nil, err
 	}
 	return conn, nil
 }
+
+func newReq(method string, urlStr string, body io.Reader) *http.Request {
+	if insecure {
+		urlStr = "http://" + urlStr
+	} else {
+		urlStr = "https://" + urlStr
+	}
+	req, err := http.NewRequest(method, urlStr, body)
+	if err != nil {
+		log.Fatal("Error creating request: ", err)
+	}
+	req.Header.Set(common.HttpPasswordHeader, string(password))
+	return req
+}
+
+func sendPassword(conn net.Conn, pwd []byte) error {
+	if pwd == nil {
+		pwd = password
+	}
+	// Send password
+	if _, err := conn.Write([]byte{byte(len(pwd))}); err != nil {
+		return err
+	}
+	if _, err := utils.WriteAll(conn, pwd); err != nil {
+		return err
+	}
+	// Check password response
+	var buf [1]byte
+	if _, err := conn.Read(buf[:]); err != nil {
+		return err
+	}
+	switch buf[0] {
+	case common.RespOk:
+		return nil
+	case common.RespErrPasswordInvalid:
+		return errIncorrectPassword
+	case common.RespErrPasswordError:
+		return fmt.Errorf("password server error")
+	default:
+		return fmt.Errorf("received unknown password response: %d", buf[0])
+	}
+}
+
+func readErrResp(conn net.Conn) ([]byte, error) {
+	buf := make([]byte, 2)
+	if _, err := io.ReadFull(conn, buf); err != nil {
+		return nil, err
+	}
+	buf = make([]byte, binary.LittleEndian.Uint16(buf))
+	_, err := io.ReadFull(conn, buf)
+	return buf, err
+}
+
+func encodeJsonBuf(v any) (*bytes.Buffer, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.NewBuffer(b), nil
+}
+
+var (
+	errIncorrectPassword = fmt.Errorf("password incorrect")
+)
 
 func must[T any](t T, err error) T {
 	if err != nil {

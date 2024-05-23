@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -21,38 +22,24 @@ var (
 )
 
 func handleSshConn(conn net.Conn) (wg *sync.WaitGroup) {
+	cmd := exec.Command(shell)
+	cmd.Dir = sshDir
+	return handleSshConnCmd(conn, cmd, cmd.Start, cmd.Wait)
+}
+
+func handleSshConnCmd(
+	conn net.Conn,
+	cmd *exec.Cmd,
+	start, wait func() error,
+) (wg *sync.WaitGroup) {
 	cw := &connWait{Conn: conn, WaitGroup: &sync.WaitGroup{}}
 	cw.Add(1)
 	wg = cw.WaitGroup
 	closeConn := utils.NewT(true)
-	defer func() {
-		if *closeConn {
-			wg.Done()
-			conn.Close()
-		}
-	}()
+	defer utils.DeferClose(closeConn, conn)
+	defer utils.DeferFunc(closeConn, wg.Done)
 
 	var buf [8]byte
-
-	// Read password
-	if _, err := conn.Read(buf[:1]); err != nil {
-		return
-	}
-	pwdLen := int(buf[0])
-	pwdBytes := make([]byte, pwdLen)
-	if _, err := io.ReadFull(conn, pwdBytes); err != nil {
-		return
-	}
-	if ok, err := checkPassword(pwdBytes); err != nil {
-		conn.Write([]byte{common.PasswordError})
-		return
-	} else if !ok {
-		conn.Write([]byte{common.PasswordInvalid})
-		return
-	}
-	if _, err := conn.Write([]byte{common.PasswordOk}); err != nil {
-		return
-	}
 
 	// Get the header to see what kind of connection it is
 	if _, err := conn.Read(buf[:1]); err != nil {
@@ -60,7 +47,7 @@ func handleSshConn(conn net.Conn) (wg *sync.WaitGroup) {
 	}
 	if buf[0] == common.HeaderNewSsh {
 		*closeConn = false
-		go handleOOB(cw)
+		go handleOOB(cw, cmd, start, wait)
 		return
 	} else if buf[0] != common.HeaderJoinSsh {
 		return
@@ -86,7 +73,11 @@ type connWait struct {
 }
 
 // out-of-band
-func handleOOB(cw *connWait) {
+func handleOOB(
+	cw *connWait,
+	cmd *exec.Cmd,
+	start, wait func() error,
+) {
 	conn := cw.Conn
 	defer cw.Done()
 	defer conn.Close()
@@ -129,18 +120,24 @@ func handleOOB(cw *connWait) {
 
 	pf, tf, err := pty.Open()
 	if err != nil || pf == nil || tf == nil {
-		log.Print("Error starting bash: ", err)
+		if err == nil {
+			err = fmt.Errorf("files returned were nil")
+		}
+		conn.Write([]byte(err.Error()))
+		log.Print("Error starting program: ", err)
+		return
 	}
 	defer pf.Close()
 	defer tf.Close()
 
-	cmd := exec.Command("bash")
-	cmd.Dir = sshDir
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = tf, tf, tf
-	f, err := pty.StartWithSize(cmd, &sz)
+	f, err := startWithSize(cmd, &sz, start)
 	if err != nil || f == nil {
+		if err == nil {
+			err = fmt.Errorf("file returned was nil")
+		}
 		conn.Write([]byte(err.Error()))
-		log.Print("Error starting: ", err)
+		log.Printf("Error starting %s: ", cmd.Path, err)
 		return
 	}
 	defer f.Close()
@@ -169,7 +166,7 @@ func handleOOB(cw *connWait) {
 		}
 		other.Close()
 	}()
-	if err := cmd.Wait(); err != nil {
+	if err := wait(); err != nil {
 		log.Print("Error waiting: ", err)
 	}
 }

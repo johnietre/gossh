@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -17,7 +18,7 @@ import (
 )
 
 var (
-	useWs bool
+	//useWs bool
 
 	gotPassword bool = false
 	termState   *term.State
@@ -39,16 +40,19 @@ func getSshCmd() *cobra.Command {
 				}
 				return
 			}
-			runSsh(addr)
+			if useHttp {
+				addr = path.Join(addr, "ws/ssh")
+			}
+			runSsh(addr, nil, nil)
 		},
 	}
-	flags := cmd.Flags()
-	flags.BoolVar(&useWs, "ws", false, "Use WebSocket instead of plain TCP")
+	//flags := cmd.Flags()
+	//flags.BoolVar(&useWs, "ws", false, "Use WebSocket instead of plain TCP")
 	return cmd
 }
 
-func runSsh(addr string) {
-	conn, other := connectSsh(addr)
+func runSsh(addr string, mainConn, otherConn net.Conn) {
+	conn, other := connectSsh(addr, mainConn, otherConn)
 
 	ws, err := pty.GetsizeFull(os.Stdin)
 	if err != nil {
@@ -130,38 +134,12 @@ func sshWatchWinSize(other net.Conn, winchCh chan os.Signal) {
 	}
 }
 
-func connectMainConn(addr string, idBuf []byte) net.Conn {
-	conn, err := connectConn(addr)
-	if err != nil {
-		log.Fatal("Error connecting: ", err)
-	}
-	if _, err := conn.Write([]byte{common.HeaderNewSsh}); err != nil {
-		log.Fatal("Error connecting: ", err)
-	}
-	if n, err := conn.Read(idBuf[1:]); err != nil {
-		log.Fatal("Error getting ID: ", err)
-	} else if n != 8 {
-		log.Fatal("Expected 8 bytes for ID, got ", n)
-	}
-	return conn
-}
-
-func connectOtherConn(addr string, idBuf []byte) net.Conn {
-	other, err := connectConn(addr)
-	if err != nil {
-		log.Fatal("Error connecting: ", err)
-	}
-	idBuf[0] = common.HeaderJoinSsh
-	if _, err := other.Write(idBuf[:]); err != nil {
-		log.Fatal("Error sending ID: ", err)
-	}
-	return other
-}
-
-func connectSsh(addr string) (net.Conn, net.Conn) {
+func connectSsh(
+	addr string, mainConn, otherConn net.Conn,
+) (net.Conn, net.Conn) {
 	var idBuf [9]byte
-	conn := connectMainConn(addr, idBuf[:])
-	other := connectOtherConn(addr, idBuf[:])
+	conn := connectMainConn(addr, idBuf[:], mainConn)
+	other := connectOtherConn(addr, idBuf[:], otherConn)
 
 	if n, err := conn.Read(idBuf[:8]); err != nil {
 		log.Fatal("Error reading response: ", err)
@@ -175,6 +153,40 @@ func connectSsh(addr string) (net.Conn, net.Conn) {
 	}
 
 	return conn, other
+}
+
+func connectMainConn(addr string, idBuf []byte, conn net.Conn) net.Conn {
+	if conn == nil {
+		var err error
+		conn, err = connectConn(addr)
+		if err != nil {
+			log.Fatal("Error connecting: ", err)
+		}
+	}
+	if _, err := conn.Write([]byte{common.HeaderNewSsh}); err != nil {
+		log.Fatal("Error connecting: ", err)
+	}
+	if n, err := conn.Read(idBuf[1:]); err != nil {
+		log.Fatal("Error getting ID: ", err)
+	} else if n != 8 {
+		log.Fatal("Expected 8 bytes for ID, got ", n)
+	}
+	return conn
+}
+
+func connectOtherConn(addr string, idBuf []byte, other net.Conn) net.Conn {
+	if other == nil {
+		var err error
+		other, err = connectConn(addr)
+		if err != nil {
+			log.Fatal("Error connecting: ", err)
+		}
+	}
+	idBuf[0] = common.HeaderJoinSsh
+	if _, err := other.Write(idBuf[:]); err != nil {
+		log.Fatal("Error sending ID: ", err)
+	}
+	return other
 }
 
 func connectConn(addr string) (conn net.Conn, err error) {
@@ -196,28 +208,10 @@ func connectConn(addr string) (conn net.Conn, err error) {
 		}
 		gotPassword = true
 	}
+	if err := sendPassword(conn, password); err != nil {
+		return nil, err
+	}
 
-	// Send password
-	if _, err := conn.Write([]byte{byte(len(password))}); err != nil {
-		return nil, err
-	}
-	if _, err := utils.WriteAll(conn, password); err != nil {
-		return nil, err
-	}
-	// Check password response
-	var buf [1]byte
-	if _, err := conn.Read(buf[:]); err != nil {
-		return nil, err
-	}
-	switch buf[0] {
-	case common.PasswordOk:
-	case common.PasswordInvalid:
-		return nil, fmt.Errorf("password incorrect")
-	case common.PasswordError:
-		return nil, fmt.Errorf("password server error")
-	default:
-		return nil, fmt.Errorf("received unknown password response: %d", buf[0])
-	}
 	*closeConn = false
 	return conn, nil
 }

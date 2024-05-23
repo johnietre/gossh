@@ -14,6 +14,7 @@ import (
 var (
 	procsDir, sshDir              string
 	noSsh, noProcs, noTcp, noHttp bool
+	shell                         string
 
 	passwordHash []byte
 	hasPassword  bool
@@ -74,6 +75,7 @@ The password, if desired, can be set using the ` + common.PasswordEnvName + ` en
 	flags.BoolVar(&noProcs, "noprocs", false, "Don't start procs server")
 	flags.BoolVar(&noTcp, "notcp", false, "Don't allow plain TCP connections, must be HTTP(s)")
 	flags.BoolVar(&noHttp, "nohttp", false, "Don't allow HTTP requests/connections")
+	flags.StringVar(&shell, "shell", "bash", "The shell to use for SSH")
 	return cmd
 }
 

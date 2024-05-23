@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/creack/pty v1.1.21
 	github.com/go-chi/chi/v5 v5.0.12
-	github.com/johnietre/utils/go v0.0.0-20240223045556-d46797a29b45
+	github.com/johnietre/utils/go v0.0.0-20240514030306-cbc5817d8c89
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/crypto v0.21.0

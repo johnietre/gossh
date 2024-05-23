@@ -1,5 +1,6 @@
 package client
 
+/*
 import (
 	"encoding/binary"
 	"fmt"
@@ -236,3 +237,4 @@ func encodePath(path string) []byte {
     path...,
   )
 }
+*/
